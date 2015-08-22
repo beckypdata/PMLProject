@@ -17,8 +17,6 @@ This report applies machine learning techniques to data sets produced as part of
 
 Thru the machine learning algorithms in this report, we will attempt to predict the measured outcomes of participant performance (class A-E represented by variable classe) using other variables from the dataset.  The original study can be found at http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises.  
 
-All R source code can be found in the Appendix.
-
 ### Data Analysis
 ```{r loadlibrary, echo=FALSE, message=FALSE, warning=FALSE}
 library(caret)
@@ -31,28 +29,28 @@ registerDoParallel(cores=3)
 
 Two datasets are referenced for this machine learning effort.  The first, https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv, will form the basis of all training and testing for the developed algorithms.  The second, https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv, will be the basis for scoring once algorithms have been developed. 
 
-```{r readinitial, echo=FALSE}
+```{r readinitial}
 xtest <- read.csv("pml-testing.csv")
 xtrain <- read.csv("pml-training.csv")
+str(xtrain[1:20])
 ```
 
-Data dimensions show `r nrow(xtrain)` observations and `r ncol(xtrain)` variables.  Evaluation of the training data through the str() function in R reveals numerous NA, blank, and non-numeric values including DIV/0!.  These values result in column representation as factor rather than numeric.  
+Data dimensions for the training dataset show `r nrow(xtrain)` observations and `r ncol(xtrain)` variables.  Evaluation of the training data through the str() function in R reveals numerous NA, blank, and non-numeric values including DIV/0!.  These values result in column representation as factor rather than numeric.  
 
-```{r readdata, echo=FALSE}
-str(xtrain[1:20])
+The data is read again handling these values as NA.
+
+```{r readdata}
 xtest <- read.csv("pml-testing.csv",na.strings=c("NA","","#DIV/0!"))
 xtrain <- read.csv("pml-training.csv",na.strings=c("NA","","#DIV/0!"))
 ```
 
-The data is read again handling these values as NA.
-
-```{r dispdata, echo=FALSE}
+```{r dispdata}
 str(xtrain[1:20])
 ```
 
-With the columns properly determined as numeric, focus turns to the large number of NA values within many columns.  These values need to be addressed prior to building models.  Columns with greater than 80% of the data NA are eliminated as there is insufficient information within these columns to accurately provide NA replacement vaues.  Additionally, nearZeroVar function is used to identify and eliminate columns containing few unique values as these will provide minimal to no value for future predictions.  Finally, the values in the first 7 columns are descriptive in nature to identify the original subject or timeframe in which observations were taken.  These provide no value in interpreting data for new subjects and are eliminated.
+With the columns properly determined as numeric, focus turns to the large number of NA values within many columns.  These values need to be addressed prior to building models.  Columns with greater than 80% of the data NA are eliminated as there is insufficient information within these columns to accurately provide NA replacement values.  Additionally, nearZeroVar function is used to identify and eliminate columns containing few unique values as these will provide minimal to no value for future predictions.  Finally, the values in the first 7 columns are descriptive in nature to identify the original subject or timeframe in which observations were taken.  These provide no value in interpreting data for new subjects and are eliminated.
 
-```{r datascrub, echo=FALSE}
+```{r datascrub}
 lst <- colnames(xtrain)
 count.na <- sapply(lst,FUN=function(x,xtrain){sum(is.na(xtrain[,x]))},xtrain)
 xtrain <- xtrain[,-which(count.na>=.8*nrow(xtrain))]
@@ -63,19 +61,19 @@ xtrain <- xtrain[,-c(1:7)]
 
 Dataset after data cleaning now reflects `r nrow(xtrain)` observations and `r ncol(xtrain)` variables.  Looking at the outcome variable, classe, the observed values align to original expectations for this column `r unique(xtrain$classe)`.  
 
-```{r datafinal, echo=FALSE}
+```{r datafinal}
 str(xtrain[1:20])
 ```
 
 ###Model Validation Approach
 
-Prior to initial model build, data is partitioned into a training set for the initial machine learning steps, a validation set which will be leveraged after initial model build for fine tuning, and a test set to be evaluated one time by final model.  The option to divide into 3 sets exists due to the large number of observations in the original research effort.  
+Prior to initial model build, data is partitioned into a training set for initial machine learning steps, a validation/tuning set which will be leveraged after initial model build for fine tuning, and a test set to be evaluated one time by final model.  The luxury to divide into 3 sets exists due to the large number of observations in the original research effort.  
 
 Once a final model is identified, tuning set will be used to estimate the Out of Sample error, and the testing set outcome will be compared to this estimate.
 
 A seed is set to ensure reproducibility of results in future.
 
-```{r datapartition, echo=FALSE}
+```{r datapartition}
 set.seed(32323)
 inTrain <- createDataPartition(y=xtrain$classe,p=.6,list=FALSE)
 training <- xtrain[inTrain,]
@@ -89,35 +87,27 @@ The training set now contains `r nrow(training)` observations and `r ncol(traini
 
 Within the validation and tuning sets, k fold cross validation with k=10 will be leveraged.  
 
-```{r crossval, echo=FALSE}
+```{r crossval}
 fitControl <- trainControl(method = "cv",number = 10)
 ```
 
 ###Initial Model
 
-As the outcome is a classification, various non-linear classification models will be evaluated first.  Four are selected for initial pass including the Classification and Regression Tree (CART), k Nearest Neighors (knn), Random Forest, Gradient Boosted Machines (GBM)  
+As the outcome to be predicted is a classification, various non-linear classification models will be evaluated first.  Four are selected for initial pass including the Classification and Regression Tree (CART), k Nearest Neighors (knn), Random Forest, Gradient Boosted Machines (GBM)  
 
-```{r initialmod, echo=FALSE, message=FALSE, warning=FALSE}
+```{r initialmod, message=FALSE, warning=FALSE}
 modelFitpart <- train(classe~.,data=training,method="rpart",trControl=fitControl)
-saveRDS(modelFitpart, file="myFilepart.rds")
-#modelFitpart = readRDS("myFilepart.rds")
 
 modelFitknn <- train(classe~.,data=training,method="knn",trControl=fitControl)
-saveRDS(modelFitknn, file="myFileknn.rds")
-#modelFitknn = readRDS("myFileknn.rds")
 
 modelFitRF <- train(classe~.,data=training,method="rf",trControl=fitControl, allowParallel=TRUE)
-saveRDS(modelFitRF, file="myFileRF.rds")
-#modelFitRF = readRDS("myFileRF.rds")
 
 modelFitgbm <- train(classe~.,data=training,method="gbm",trControl=fitControl,verbose=FALSE)
-saveRDS(modelFitgbm, file="myFilegbm.rds")
-#modelFitgbm = readRDS("myFilegbm.rds")
 ```
 
-Comparison of the initial models is completed by looking at the difference in acccuracy.  In the following plot with confidence level .992, we can reject the null hypothesis that there is no difference in model accuracy for all pairings of models.  We can also see that CART provides the least accuracy, knn performs substantially better than CART but less than Random Forest or GBM.  We see that Random Forest performs better than GBM with very tight confidence interval.  Random Forest is the best option among these initially evaluated models.
+Comparison of the initial models is completed by looking at the difference in acccuracy for each.  In the following plot with confidence level .992, we can reject the null hypothesis that there is no difference in model accuracy for all pairings of models.  We can also see that CART provides the least accuracy, knn performs substantially better than CART but less than Random Forest or GBM.  We see that Random Forest performs better than GBM with very tight confidence interval.  Random Forest is the best option among these initially evaluated models.
 
-```{r evalmod, echo=FALSE}
+```{r evalmod}
 resamps <- resamples(list(KNN=modelFitknn,CART=modelFitpart,RF=modelFitRF,GBM=modelFitgbm))
 difValues <- diff(resamps)
 dotplot(difValues, metric="Accuracy")
@@ -125,7 +115,7 @@ dotplot(difValues, metric="Accuracy")
 
 The confusion matrix for Random Forest reflects low error rates for each predicted value.  In order to achieve this level of accuracy, a total of `r nrow(varImp(modelFitRF)$importance)` of the original `r ncol(training)` variables were leveraged.  As accuracy will always improve with larger number of factors in modeling, it would be valuable to know if comparable accuracy could be obtained with smaller set of variables.
 
-```{r modconfusion, echo=FALSE}
+```{r modconfusion}
 modelFitRF$finalModel$confusion
 ```
 
@@ -135,7 +125,7 @@ In an attempt to reduce the number of factors while achieving comparable accurac
 
 The first takes the variables of importance that contributed to 80% of the model fit related to each of the previous models, excluding knn as the varImp() function does not work with this model.  
 
-```{r ImpVarmod, echo=FALSE, message=FALSE, warning=FALSE}
+```{r ImpVarmod, message=FALSE, warning=FALSE}
 varImppart <- as.matrix(varImp(modelFitpart)$importance)
 varImpRF <- as.matrix(varImp(modelFitRF)$importance)
 varImpgbm <- as.matrix(varImp(modelFitgbm)$importance)
@@ -149,69 +139,63 @@ trainImp <- training[,keepidx]
 tuneImp <- tuning[,keepidx]
 
 modelFitRFimp <- train(classe~.,data=tuneImp,method="rf",trControl=fitControl, allowParallel=TRUE)
-saveRDS(modelFitRFimp, file="myFileRFimp.rds")
-#modelFitRFimp = readRDS("myFileRFimp.rds")
 ```
 
 The resulting confusion matrix reflects low error rates for each predicted value using a total of `r nrow(varImp(modelFitRFimp)$importance)` variables.
 
-```{r modconfusionimp, echo=FALSE}
+```{r modconfusionimp}
 modelFitRFimp$finalModel$confusion
 ```
 
 The second attempt uses Principal Components Analysis in conjunction with Random Forest.
 
-```{r PCAmod, echo=FALSE}
+```{r PCAmod}
 preProc <- preProcess(training[,-52],method="pca")
 trainPC <- predict(preProc,training[,-52])
 tunePC <- predict(preProc,tuning[,-52])
 
 modelFitRFpca <- train(tuning$classe~.,data=tunePC,method="rf",trControl=fitControl,allowParallel=TRUE)
-saveRDS(modelFitRFpca, file="myFileRFpca.rds")
-#modelFitRFpca = readRDS("myFileRFpca.rds")
 ```
 
 The resulting confusion matrix reflects low error rates for each predicted value using a total of `r nrow(varImp(modelFitRFpca)$importance)` variables..
 
-```{r modconfusionpca, echo=FALSE}
+```{r modconfusionpca}
 modelFitRFpca$finalModel$confusion
 ```
 
-The final tuning approach considers the actual variables.  An ideal goal would be to have a high performing model with minimal number of factors providing clear context for purpose of each selected variable.  The variables selected by each of the previous tuning Random Forest methods include:
+The final tuning approach considers the actual variables.  An ideal goal would be to have a high performing model with minimal number of factors while providing clear context for purpose of each selected variable.  The variables selected by each for the two previous tuning Random Forest methods include:
 
-``` {r RFimp, echo=FALSE}
+``` {r RFimp}
 varImp(modelFitRFimp)
 ```
 
-``` {r pcaimp, echo=FALSE}
+``` {r pcaimp}
 varImp(modelFitRFpca)
 ```
 
-The first tuning method selected variables from the x,y and z dimensions for many of the factors, but not from all 3 dimensions for those factors.  It would be difficult to explain why a subject movement in 2 of 3 dimensions was relevant, but not the third.  The Principal Components Analysis selected variables become a combination of many, and can be difficult to explain by definition.  Other factors are available in the original dataset that seem to summarize the original x,y,z measurements.  The third approach will leverage Random Forest reducing factors to only those without x,y and z dimension variable names.
+The first tuning method selected variables from the x,y and z dimensions for many of the factors, but not from all 3 dimensions for any of the factors.  It would be difficult to explain why a subject movement in 2 of 3 dimensions was relevant, but not the third.  The Principal Components Analysis variables are actually each a combination of many factors, and as a result can be difficult to interpret.  Other factors are available in the original dataset that seem to summarize the original x,y,z measurements without relying on the dimensional elements.  The third approach will leverage Random Forest reducing factors to only those with no x,y and z dimension variable names.
 
-```{r NVmod, echo=FALSE}
+```{r NVmod}
 xstr <- grepl("_x|_y|_z",colnames(training))
 nvtrain <- training[,!xstr]
 nvtune <- tuning[,!xstr]
 
 modelFitRFnv <- train(classe~.,data=nvtune,method="rf",trControl=fitControl, allowParallel=TRUE)
-saveRDS(modelFitRFnv, file="myFileRFnv.rds")
-#modelFitRFnv = readRDS("myFileRFnv.rds")
 ```
 
 The resulting model confusion matrix reflects low error rates for each predicted value using a total of `r nrow(varImp(modelFitRFnv)$importance)` variables.  
 
-```{r modconfusionnv, echo=FALSE}
+```{r modconfusionnv}
 modelFitRFnv$finalModel$confusion
 ```
 
-``` {r nvimp, echo=FALSE}
+``` {r nvimp}
 varImp(modelFitRFnv)
 ```
 
-Comparison of the 3 tuned Random Forest models with the original Random Forest model is now completed looking at the difference in acccuracy.  In the following plot with confidence level .992, we cannot reject the null hypothesis that there is no difference in model accuracy for the RF variables of importance to RF non-vector.  Random Forest alone performs substantially better than RF with pca, but only slightly better than RF with non-vector and RF with variables of importance.  Given the benefit of fewer factors required, and the ease of explanation of what each of those factors are, the RF with non-vector variable algorithm is selected.
+Comparison of the 3 tuned Random Forest models with the original Random Forest model is now completed looking at the difference in acccuracy.  In the following plot with confidence level .992, we cannot reject the null hypothesis that there is no difference in model accuracy for the RF variables of importance to RF non-vector.  Random Forest alone performs substantially better than RF with PCA, but only slightly better than RF with non-vector and RF with variables of importance.  Given the benefit of fewer factors required, and the ease of explanation of what each of those factors are, the RF with non-vector variable algorithm is selected.
 
-```{r modComp, echo=FALSE}
+```{r modComp}
 resamps <- resamples(list(RF=modelFitRF,RFpca=modelFitRFpca,RFnv=modelFitRFnv,RFimp=modelFitRFimp))
 difValues <- diff(resamps)
 dotplot(difValues, metric="Accuracy")
@@ -221,16 +205,15 @@ dotplot(difValues, metric="Accuracy")
 
 In order to estimate the Out of Sample error, a missclassification function is created.  That function is applied in turn to the tuning data to estimate the out of sample error.  Comparison is then completed using the testing data originally set aside.  We can see that the estimated out of sample error is very close to actual performance against the testing data.
 
-
-```{r outsamperr, echo=FALSE}
+```{r outsamperr}
 missClass <- function(values,prediction){sum(prediction!=values)/length(values)}
 missClass(nvtune$classe,modelFitRFnv$finalModel$predicted)
 missClass(testing$classe,predict(modelFitRFnv,testing))
 ```
 
-A comparable assessment can be completed for the original Random Forest algorithm to reflect the Out of Sample estimated error againt training set, and the resulting error when applied to testing data.  We can see that accuracy would in fact be somewhat higher, but as stated earlier, there is also value in providing clear context behind the model factors selected.
+A comparable assessment can be completed for the original Random Forest algorithm to reflect the Out of Sample estimated error againt training set, and the resulting error when applied to testing data.  We can see that accuracy would in fact be somewhat higher with this algorithm than selected algorithm, but as stated earlier, there is also value in providing clear context behind the model factors selected.
 
-```{r outsamperrRF, echo=FALSE}
+```{r outsamperrRF}
 missClass(training$classe,modelFitRF$finalModel$predicted)
 missClass(testing$classe,predict(modelFitRF,testing))
 ```
@@ -239,7 +222,7 @@ missClass(testing$classe,predict(modelFitRF,testing))
 
 Finally, the selected algorithm is run against the project provided test data set for submission.
 
-```{r writeans, echo=FALSE}
+```{r writeans}
 testPred <- predict(modelFitRFnv, xtest)
 testPred
 answers <- as.character(testPred)
@@ -253,79 +236,4 @@ pml_write_files = function(x){
 }
 pml_write_files(answers)
 setwd("..")
-```
-
-\newpage
-
-### Appendix
-```{r showlib, ref.label='loadlibrary', eval=FALSE}
-```
-
-```{r showinitial, ref.label='readinitial', eval=FALSE}
-```
-
-```{r showdata, ref.label='readdata', eval=FALSE}
-```
-
-```{r showdisp, ref.label='dispdata', eval=FALSE}
-```
-
-```{r showscrub, ref.label='datascrub', eval=FALSE}
-```
-
-```{r showfinal, ref.label='datafinal', eval=FALSE}
-```
-
-```{r showpart, ref.label='datapartition', eval=FALSE}
-```
-
-```{r showcross, ref.label='crossval', eval=FALSE}
-```
-
-```{r showinitialmod, ref.label='initialmod', eval=FALSE}
-```
-
-```{r showevalmod, ref.label='evalmod', eval=FALSE}
-```
-
-```{r showmodconfusion, ref.label='modconfusion', eval=FALSE}
-```
-
-```{r showimpvarmod, ref.label='ImpVarmod', eval=FALSE}
-```
-
-```{r showmodconfusionimp, ref.label='modconfusionimp', eval=FALSE}
-```
-
-```{r showPCAmod, ref.label='PCAmod', eval=FALSE}
-```
-
-```{r showmodconfusionpca, ref.label='modconfusionpca', eval=FALSE}
-```
-
-``` {r showRFimp, ref.label='RFimp', eval=FALSE}
-```
-
-``` {r showpcaimp, ref.label='pcaimp', eval=FALSE}
-```
-
-```{r showNVmod, ref.label='NVmod', eval=FALSE}
-```
-
-```{r showmodconfusionnv, ref.label='modconfusionnv', eval=FALSE}
-```
-
-``` {r shownvimp, ref.label='nvimp', eval=FALSE}
-```
-
-```{r showmodComp, ref.label='modComp', eval=FALSE}
-```
-
-```{r showoutsamperr, ref.label='outsamperr', eval=FALSE}
-```
-
-```{r showoutsamperrRF, ref.label='outsamperrRF', eval=FALSE}
-```
-
-```{r showwriteans, ref.label='writeans', eval=FALSE}
 ```
